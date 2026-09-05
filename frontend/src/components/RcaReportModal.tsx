@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { BenchmarkScenario } from '../types';
 import { X, Printer, FileText, CheckCircle, AlertTriangle, ShieldCheck, Download } from 'lucide-react';
 
@@ -8,6 +8,87 @@ interface RcaReportModalProps {
 }
 
 export const RcaReportModal: React.FC<RcaReportModalProps> = ({ scenario, onClose }) => {
+  const [rca, setRca] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!scenario) {
+      setRca(null);
+      return;
+    }
+
+    const loadRca = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const peakFrame = [...(scenario.frames ?? [])].sort(
+          (a, b) =>
+            Number(b.telemetry?.riskScore ?? 0) -
+            Number(a.telemetry?.riskScore ?? 0)
+        )[0];
+
+        const peakTelemetry = peakFrame?.telemetry;
+
+        const response = await fetch(
+          'http://127.0.0.1:8000/api/generate-rca',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+
+            
+
+            body: JSON.stringify({
+              event_id: scenario.id,
+              event_data: {
+                id: scenario.id,
+                timestamp_str: (scenario as any).timestampStr ?? 'Unknown',
+                bay_id: scenario.bayId,
+                title: (scenario as any).title ?? scenario.observedBehavior,
+                behavior_type: (scenario as any).behaviorType ?? 'DROP_IMPACT',
+                severity: scenario.severity,
+                risk_score: Math.max(
+                  ...(scenario.frames ?? []).map((frame) =>
+                    Number(frame.telemetry?.riskScore ?? 0)
+                  )
+                ),
+                package_mass_kg: scenario.productMassKg,
+                telemetry: {
+                  v_total: peakTelemetry?.velocityTotal,
+                  ay: peakTelemetry?.accelerationY,
+                  drop_height_m: peakTelemetry?.dropHeightMeters,
+                  impact_energy_joules: peakTelemetry?.impactEnergyJoules,
+                  impact_force_newtons: peakTelemetry?.impactForceNewtons,
+                },
+                observed_behavior: scenario.observedBehavior,
+                potential_risk: scenario.potentialRisk,
+                recommended_action: scenario.recommendedAction,
+              },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`RCA request failed: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('Backend RCA:', result);
+        setRca(result);
+      } catch (err) {
+        console.error('RCA generation failed:', err);
+        setError('Unable to generate the RCA from the backend.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadRca();
+  }, [scenario]);
+
   if (!scenario) return null;
 
   const handlePrint = () => {
@@ -70,7 +151,9 @@ export const RcaReportModal: React.FC<RcaReportModalProps> = ({ scenario, onClos
               <span className="text-[10px] text-slate-400">Severity Classification</span>
               <p className={`font-bold font-mono ${
                 scenario.severity === 'CRITICAL' ? 'text-red-400' : 'text-amber-400'
-              }`}>{scenario.severity} (Score: 92/100)</p>
+              }`}>
+                {rca?.severity ?? scenario.severity} (Score: {rca?.risk_score ?? 0}/100)
+              </p>
             </div>
           </div>
 
@@ -90,11 +173,17 @@ export const RcaReportModal: React.FC<RcaReportModalProps> = ({ scenario, onClos
               </div>
               <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
                 <span className="text-[10px] font-bold text-blue-400">C. AI Intervention</span>
-                <p className="mt-1 text-slate-300">Real-time edge multilingual voice alert + HUD flag.</p>
+                <p className="mt-1 text-slate-300">
+                  {rca?.distinction_chain?.intervention_triggered ??
+                    'Supervisor review recommended based on detected risk.'}
+                </p>
               </div>
               <div className="bg-slate-900 border border-emerald-500/40 p-2.5 rounded-xl bg-emerald-950/20">
                 <span className="text-[10px] font-bold text-emerald-400">D. Damage Outcome</span>
-                <p className="mt-1 text-emerald-300 font-semibold">Damage Avoided; ₹{scenario.financialRiskInr.toLocaleString('en-IN')} Saved.</p>
+                <p className="mt-1 text-slate-300">
+                  {rca?.distinction_chain?.damage_outcome ??
+                    'No confirmed damage outcome was provided by the event data.'}
+                </p>
               </div>
             </div>
           </div>
@@ -105,12 +194,67 @@ export const RcaReportModal: React.FC<RcaReportModalProps> = ({ scenario, onClos
               2. Physics-Informed Kinematics Evidence (PI-TK)
             </h4>
             <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl font-mono text-[11px] grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div>Peak Vertical Velocity: <strong className="text-blue-400">2.8 m/s</strong></div>
-              <div>Free-Fall Acceleration: <strong className="text-red-400">9.6 m/s²</strong></div>
-              <div>Kinetic Impact Energy: <strong className="text-amber-400">89.2 Joules</strong></div>
-              <div>Drop Height Threshold: <strong className="text-white">1.15 Meters</strong></div>
-              <div>Spine Flexion Angle: <strong className="text-orange-400">28° (Strain)</strong></div>
-              <div>Edge Detection Latency: <strong className="text-emerald-400">38ms</strong></div>
+              {loading ? (
+  <div className="col-span-full text-blue-400">
+    Generating RCA from backend telemetry...
+  </div>
+) : error ? (
+  <div className="col-span-full text-red-400">
+    {error}
+  </div>
+) : (
+  <>
+    <div>
+      Velocity:{' '}
+      <strong className="text-blue-400">
+        {rca?.sequence_of_events?.find((x: string) =>
+          x.toLowerCase().includes('velocity')
+        ) ?? 'Not provided'}
+      </strong>
+    </div>
+
+    <div>
+      Drop Height:{' '}
+      <strong className="text-white">
+        {rca?.sequence_of_events?.find((x: string) =>
+          x.toLowerCase().includes('drop height')
+        ) ?? 'Not provided'}
+      </strong>
+    </div>
+
+    <div>
+      Impact Energy:{' '}
+      <strong className="text-amber-400">
+        {rca?.sequence_of_events?.find((x: string) =>
+          x.toLowerCase().includes('impact energy')
+        ) ?? 'Not provided'}
+      </strong>
+    </div>
+
+    <div>
+      Impact Force:{' '}
+      <strong className="text-red-400">
+        {rca?.sequence_of_events?.find((x: string) =>
+          x.toLowerCase().includes('impact force')
+        ) ?? 'Not provided'}
+      </strong>
+    </div>
+
+    <div>
+      Package Mass:{' '}
+      <strong className="text-white">
+        {scenario.productMassKg} kg
+      </strong>
+    </div>
+
+    <div>
+      Risk Score:{' '}
+      <strong className="text-red-400">
+        {rca?.risk_score ?? 0}/100
+      </strong>
+    </div>
+  </>
+)}
             </div>
           </div>
 
@@ -120,31 +264,45 @@ export const RcaReportModal: React.FC<RcaReportModalProps> = ({ scenario, onClos
               3. Root Cause Investigation
             </h4>
             <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 text-xs">
-              <p><strong>Primary Root Cause:</strong> {scenario.rootCause}</p>
-              <p><strong>Expected Standard Practice:</strong> {scenario.expectedPractice}</p>
+              <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl space-y-2 text-xs">
+  <p>
+    <strong>Primary Root Cause:</strong>{' '}
+    {rca?.root_cause_analysis?.primary_factor ??
+      scenario.rootCause}
+  </p>
+
+  <p>
+    <strong>Contributing Factor:</strong>{' '}
+    {rca?.root_cause_analysis?.contributing_factor ??
+      'Not provided'}
+  </p>
+
+  <p>
+    <strong>Environmental Factor:</strong>{' '}
+    {rca?.root_cause_analysis?.environmental_factor ??
+      'Not provided'}
+  </p>
+</div> 
             </div>
           </div>
 
           {/* Corrective and Preventive Actions (CAPA) */}
-          <div className="space-y-2">
-            <h4 className="font-bold text-white text-xs uppercase tracking-wider text-emerald-400">
-              4. Corrective & Preventative Actions (CAPA)
-            </h4>
-            <div className="bg-emerald-950/20 border border-emerald-500/40 p-3.5 rounded-xl space-y-1.5 text-xs text-emerald-200">
-              <div className="flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>{scenario.recommendedAction}</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Adjust staging table distance to within 1.0m of tailgate.</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>Conduct 5-minute pre-shift briefing on two-point cradle lifting.</span>
-              </div>
-            </div>
-          </div>
+<div className="space-y-2">
+  <h4 className="font-bold text-white text-xs uppercase tracking-wider text-emerald-400">
+    4. Corrective & Preventative Actions (CAPA)
+  </h4>
+
+  <div className="bg-emerald-950/20 border border-emerald-500/40 p-3.5 rounded-xl space-y-1.5 text-xs text-emerald-200">
+    {(rca?.corrective_actions ?? [scenario.recommendedAction]).map(
+      (action: string, index: number) => (
+        <div key={index} className="flex items-start gap-2">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <span>{action}</span>
+        </div>
+      )
+    )}
+  </div>
+</div>
 
           {/* Responsible AI Compliance Statement */}
           <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-mono">

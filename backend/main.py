@@ -101,38 +101,117 @@ def generate_rca(req: RcaRequest):
     e = req.event_data
     b_type = e.get("behavior_type", "DROP_IMPACT")
     meta = BEHAVIOR_TAXONOMY.get(b_type, {})
-    
+
+    telemetry = e.get("telemetry", {})
+
+    timestamp = e.get("timestamp_str", "Unknown")
+    bay_id = e.get("bay_id", "Unknown")
+    title = e.get("title", meta.get("title", "Handling Incident"))
+    severity = e.get("severity", "HIGH")
+    risk_score = e.get("risk_score", 0)
+
+    velocity = telemetry.get("v_total")
+    acceleration = telemetry.get("ay")
+    impact_energy = e.get("impact_energy_joules", telemetry.get("impact_energy_joules"))
+    impact_force = e.get("impact_force_newtons", telemetry.get("impact_force_newtons"))
+    drop_height = e.get("drop_height_m", telemetry.get("drop_height_m"))
+    package_mass = e.get("package_mass_kg", telemetry.get("package_mass_kg"))
+
+    sequence_of_events = [
+        f"Incident detected at {timestamp} in {bay_id}.",
+        f"Observed behavior: {meta.get('title', b_type)}."
+    ]
+
+    if package_mass is not None:
+        sequence_of_events.append(
+            f"Package mass recorded at {package_mass} kg."
+        )
+
+    if drop_height is not None:
+        sequence_of_events.append(
+            f"Estimated drop height: {drop_height:.2f} m."
+        )
+
+    if velocity is not None:
+        sequence_of_events.append(
+            f"Measured motion velocity: {velocity:.2f} m/s."
+        )
+
+    if impact_energy is not None:
+        sequence_of_events.append(
+            f"Estimated impact energy: {impact_energy:.2f} J."
+        )
+
+    if impact_force is not None:
+        sequence_of_events.append(
+            f"Estimated impact force: {impact_force:.2f} N."
+        )
+
+    root_cause_analysis = {
+        "primary_factor": meta.get(
+            "description",
+            "Observed handling behavior requires review."
+        ),
+        "contributing_factor": (
+            f"Risk score of {risk_score}/100 with {severity} severity."
+        ),
+        "environmental_factor": (
+            "No environmental contributing factor was provided by the event telemetry."
+        )
+    }
+
+    corrective_actions = [
+        meta.get(
+            "suggested_action",
+            "Review operator handling technique."
+        )
+    ]
+
+    if risk_score >= 80:
+        corrective_actions.append(
+            "Perform supervisor review before repeating the handling operation."
+        )
+    elif risk_score >= 50:
+        corrective_actions.append(
+            "Review the handling sequence and reinforce the recommended technique."
+        )
+
+    corrective_actions.append(
+        "Use recorded telemetry and incident evidence for the follow-up safety review."
+    )
+
     rca_document = {
         "incident_id": req.event_id,
-        "timestamp": e.get("timestamp_str", "14:22:05"),
-        "bay_id": e.get("bay_id", "Bay 3"),
-        "title": e.get("title", meta.get("title", "Handling Incident")),
-        "severity": e.get("severity", "HIGH"),
-        "risk_score": e.get("risk_score", 85),
-        "sequence_of_events": [
-            "Operator initiated unassisted lift from vehicle tailboard.",
-            "Carton slipped due to lack of secondary base support point.",
-            f"Free-fall velocity measured at {e.get('telemetry', {}).get('v_total', '2.8')} m/s before ground impact.",
-            "Visual evidence captured; package remained stationary after impact."
-        ],
+        "timestamp": timestamp,
+        "bay_id": bay_id,
+        "title": title,
+        "severity": severity,
+        "risk_score": risk_score,
+        "sequence_of_events": sequence_of_events,
         "distinction_chain": {
-            "observed_behavior": meta.get("description", "Improper unloading sequence"),
-            "potential_risk": "Corrugation crushing and internal product fracture.",
-            "intervention_triggered": "Multilingual edge audio alert + Supervisor HUD highlight.",
-            "damage_outcome": "Potential damage intercepted; quality check dispatched before sorting."
+            "observed_behavior": meta.get(
+                "description",
+                "Observed handling behavior."
+            ),
+            "potential_risk": meta.get(
+                "risk",
+                "Potential product or operator safety risk."
+            ),
+            "intervention_triggered": (
+                "Supervisor review recommended based on detected risk."
+            ),
+            "damage_outcome": (
+                "No confirmed damage outcome was provided by the event data."
+            )
         },
-        "root_cause_analysis": {
-            "primary_factor": "Lack of ergonomic vacuum hoist assistance for heavy cartons (>20kg).",
-            "contributing_factor": "Staging table placed >2.5m away, encouraging operator to drop or throw cartons.",
-            "environmental_factor": "Loading dock ramp gradient uneven."
-        },
-        "corrective_actions": [
-            meta.get("suggested_action", "Review operator handling technique."),
-            "Relocate staging pallet to within 1.0m of vehicle tailboard.",
-            "Mandate 2-person team lifting for cartons marked >15kg."
-        ],
-        "responsible_ai_notice": "Worker identity protected via silhouette anonymization. Data used exclusively for process safety enhancement."
+        "root_cause_analysis": root_cause_analysis,
+        "corrective_actions": corrective_actions,
+        "responsible_ai_notice": (
+            "Worker identity protected via silhouette anonymization. "
+            "Data used exclusively for process safety enhancement."
+        )
     }
+
     return rca_document
 
 if __name__ == "__main__":

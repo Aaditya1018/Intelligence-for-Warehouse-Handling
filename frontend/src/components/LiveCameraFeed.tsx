@@ -35,6 +35,9 @@ export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({
   const animRef = useRef<number | null>(null);
   const prevBoxY = useRef<number>(200);
   const prevTime = useRef<number>(Date.now());
+  const previousFrameRef = useRef<ImageData | null>(null);
+  const trajectoryRef = useRef<[number, number, number][]>([]);
+  const lastBackendCallRef = useRef<number>(0);
 
   // Start Webcam
   const startWebcam = async () => {
@@ -109,41 +112,191 @@ export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({
         ctx.fillText('[WORKER SILHOUETTE PROTECTED]', w * 0.2 + 10, h * 0.15 + 25);
       }
 
-      // Physics Kinematics Simulation on Center Object
-      const now = Date.now();
-      const dt = Math.max((now - prevTime.current) / 1000, 0.01);
-      prevTime.current = now;
+      // Motion-based video analysis
+const now = Date.now();
+const dt = Math.max((now - prevTime.current) / 1000, 0.01);
+prevTime.current = now;
 
-      // Simulated detection box tracking
-      const boxX = w * 0.45;
-      const boxY = h * 0.4 + Math.sin(now / 400) * 40;
-      const boxW = 120;
-      const boxH = 100;
+// Analyze the actual video frame for motion
+const currentFrame = ctx.getImageData(0, 0, w, h);
+let motionPixels = 0;
+let sumX = 0;
+let sumY = 0;
 
-      const dy = (boxY - prevBoxY.current) / 120; // in meters
-      const vy = dy / dt;
-      const ay = Math.abs(vy) / dt;
-      prevBoxY.current = boxY;
+if (previousFrameRef.current) {
+  const previousFrame = previousFrameRef.current.data;
+  const current = currentFrame.data;
 
-      const isHighDrop = ay > 8.0 || Math.abs(vy) > 2.2;
-      const risk = isHighDrop ? 'CRITICAL' : ay > 4.0 ? 'HIGH' : 'LOW';
-      setActiveRiskLevel(risk);
+  for (let y = 0; y < h; y += 4) {
+    for (let x = 0; x < w; x += 4) {
+      const index = (y * w + x) * 4;
 
-      const curRiskScore = isHighDrop ? 94 : ay > 4.0 ? 70 : 18;
-      setTelemetry({
-        timestampSec: Number((now / 1000).toFixed(1)),
-        velocityX: 0.1,
-        velocityY: Number(vy.toFixed(2)),
-        velocityTotal: Number(Math.abs(vy).toFixed(2)),
-        accelerationY: Number(ay.toFixed(2)),
-        dropHeightMeters: isHighDrop ? 1.05 : 0.0,
-        impactEnergyJoules: isHighDrop ? 78.4 : 0.0,
-        impactForceNewtons: isHighDrop ? 520.0 : 0.0,
-        stackTiltDegrees: 4.2,
-        overhangRatio: 0.05,
-        pinchDistanceMeters: 3.2,
-        riskScore: curRiskScore
+      const diff =
+        Math.abs(current[index] - previousFrame[index]) +
+        Math.abs(current[index + 1] - previousFrame[index + 1]) +
+        Math.abs(current[index + 2] - previousFrame[index + 2]);
+
+      if (diff > 100) {
+        motionPixels++;
+        sumX += x;
+        sumY += y;
+      }
+    }
+  }
+}
+
+previousFrameRef.current = currentFrame;
+
+const motionDetected = motionPixels > 150 && motionPixels < 5000;
+
+const motionCenterX =
+  motionPixels > 0 ? sumX / motionPixels : w / 2;
+
+const motionCenterY =
+  motionPixels > 0 ? sumY / motionPixels : h / 2;
+
+// Keep the detected region inside the video frame
+const boxW = 120;
+const boxH = 100;
+
+// Smooth the detected motion region to reduce frame-to-frame jumps
+const rawBoxX = Math.max(
+  0,
+  Math.min(w - boxW, motionCenterX - boxW / 2)
+);
+
+const rawBoxY = Math.max(
+  0,
+  Math.min(h - boxH, motionCenterY - boxH / 2)
+);
+
+const maxJumpPerFrame = 35;
+
+const previousX =
+  trajectoryRef.current.length > 0
+    ? trajectoryRef.current[trajectoryRef.current.length - 1][0]
+    : rawBoxX;
+
+const previousY =
+  trajectoryRef.current.length > 0
+    ? trajectoryRef.current[trajectoryRef.current.length - 1][1]
+    : rawBoxY;
+
+const boxX =
+  Math.abs(rawBoxX - previousX) > maxJumpPerFrame
+    ? previousX
+    : rawBoxX;
+
+const boxY =
+  Math.abs(rawBoxY - previousY) > maxJumpPerFrame
+    ? previousY
+    : rawBoxY;
+
+// Send recent trajectory to FastAPI backend once per second
+if (motionDetected) {
+  const timestampSec = now / 1000;
+
+  trajectoryRef.current.push([
+  boxX,
+  boxY,
+  timestampSec
+]);
+
+if (trajectoryRef.current.length > 6) {
+  trajectoryRef.current.shift();
+}
+
+  if (trajectoryRef.current.length > 10) {
+    trajectoryRef.current.shift();
+  }
+
+  if (
+    trajectoryRef.current.length >= 3 &&
+    now - lastBackendCallRef.current > 1000
+  ) {
+    lastBackendCallRef.current = now;
+
+    fetch("http://127.0.0.1:8000/api/analyze-kinematics", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        bbox_coordinates: [
+          boxX,
+          boxY,
+          boxW,
+          boxH
+        ],
+        trajectory: trajectoryRef.current,
+        package_mass_kg: 15
+      })
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Backend error: ${response.status}`);
+        }
+
+        return response.json();
+      })
+      .then((backendResult) => {
+  console.log("Backend kinematics:", backendResult);
+
+  const k = backendResult.kinematics || {};
+  const impact = backendResult.impact || {};
+  const evaluation = backendResult.evaluation || {};
+
+  const backendVelocity = Number(k.v_total ?? 0);
+  const backendAcceleration = Number(k.ay ?? 0);
+  const backendRiskScore = Number(evaluation.risk_score ?? 0);
+
+  let backendRisk: RiskLevel = 'LOW';
+
+  if (backendRiskScore >= 80) {
+    backendRisk = 'CRITICAL';
+  } else if (backendRiskScore >= 50) {
+    backendRisk = 'HIGH';
+  } else if (backendRiskScore >= 25) {
+    backendRisk = 'MEDIUM';
+  }
+
+  setActiveRiskLevel(backendRisk);
+
+  setTelemetry((previous) => ({
+    ...previous,
+    velocityY: Number(k.v_y ?? 0),
+    velocityTotal: backendVelocity,
+    accelerationY: backendAcceleration,
+    dropHeightMeters: Number(k.drop_height_m ?? 0),
+    impactEnergyJoules: Number(
+      impact.kinetic_energy_joules ?? 0
+    ),
+    impactForceNewtons: Number(
+      impact.impact_force_newtons ?? 0
+    ),
+    riskScore: backendRiskScore
+  }));
+})
+      .catch((error) => {
+        console.warn("Backend kinematics unavailable:", error);
       });
+  }
+}
+
+const dy = (boxY - prevBoxY.current) / 120;
+const vy = dy / dt;
+const ay = Math.abs(vy) / dt;
+
+prevBoxY.current = boxY;
+
+const isHighDrop =
+  motionDetected && (ay > 8.0 || Math.abs(vy) > 2.2);
+
+const risk = isHighDrop
+  ? 'CRITICAL'
+  : motionDetected && ay > 4.0
+  ? 'HIGH'
+  : 'LOW';
 
       // Draw AI Bounding Box & HUD
       ctx.strokeStyle = risk === 'CRITICAL' ? '#EF4444' : risk === 'HIGH' ? '#F59E0B' : '#3B82F6';
@@ -157,7 +310,11 @@ export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({
       ctx.fillRect(boxX, boxY - 24, 180, 24);
       ctx.fillStyle = '#FFFFFF';
       ctx.font = 'bold 11px Inter, sans-serif';
-      ctx.fillText(`Carton #Live (v=${Math.abs(vy).toFixed(1)}m/s)`, boxX + 6, boxY - 8);
+      ctx.fillText(
+  `Motion Region (v=${Math.abs(vy).toFixed(1)}m/s)`,
+  boxX + 6,
+  boxY - 8
+);
 
       if (isHighDrop) {
         onAlertTriggered({
@@ -249,7 +406,6 @@ export const LiveCameraFeed: React.FC<LiveCameraFeedProps> = ({
             <Video className="w-12 h-12 text-slate-600" />
             <h4 className="text-sm font-bold text-white">Live Camera Ingestion Idle</h4>
             <p className="text-xs text-slate-400 max-w-md">
-              Start your device camera or upload a warehouse loading video clip to run real-time AI object tracking, kinematic drop detection, and instant risk scoring.
             </p>
             <div className="flex gap-3 pt-2">
               <button

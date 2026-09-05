@@ -16,7 +16,12 @@ class SupervisorCopilotAgent:
         
         # 1. High risk events query
         if "high-risk" in q or "critical" in q or "dangerous" in q or "high risk" in q:
-            high_risk = [e for e in active_events if e.get("severity") in ["HIGH", "CRITICAL"]]
+            
+            high_risk = [
+    e for e in active_events
+    if e.get("severity") in ["HIGH", "CRITICAL"]
+    or e.get("risk_score", 0) >= 50
+]
             if not high_risk:
                 return {
                     "response": "No high-risk or critical incidents have been detected in the current shift. All handling parameters remain within safe operational bounds.",
@@ -25,14 +30,24 @@ class SupervisorCopilotAgent:
                 }
             
             bullet_points = "\n".join([
-                f"• **{e.get('timestamp_str', '00:00')} [Bay {e.get('bay_id', '1')}] {e.get('title', 'Event')}** (Risk Score: {e.get('risk_score')}/100) — *{e.get('summary', '')}*"
-                for e in high_risk[:5]
-            ])
+    f"• **{e.get('timestamp_str', '00:00')} [{e.get('location', 'Bay ' + str(e.get('bay_id', '1')))}] "
+    f"{e.get('title', BEHAVIOR_TAXONOMY.get(e.get('behavior_type', ''), {}).get('title', 'Event'))}** "
+    f"(Risk Score: {e.get('risk_score', 0)}/100) — "
+    f"*{e.get('summary', e.get('description', ''))}*"
+    for e in high_risk[:5]
+])
             
             return {
                 "response": f"🚨 **Identified {len(high_risk)} High/Critical Risk Events:**\n\n{bullet_points}\n\n**Immediate Action Needed:** {high_risk[0].get('suggested_action', 'Review operator technique.')}",
-                "events_referenced": [e.get("id") for e in high_risk[:5]],
-                "suggestions": [f"Why was {high_risk[0].get('id')} classified as high risk?", "Generate Shift RCA Report", "Show bay breakdown"]
+                "events_referenced": [
+    e.get("id", e.get("event_id", f"event-{i + 1}"))
+    for i, e in enumerate(high_risk[:5])
+],
+                "suggestions": [
+    f"Why was {high_risk[0].get('id', high_risk[0].get('event_id', high_risk[0].get('behavior_type', 'this event')))} classified as high risk?",
+    "Generate Shift RCA Report",
+    "Show bay breakdown"
+]
             }
 
         # 2. Common risky behaviors / top behaviors

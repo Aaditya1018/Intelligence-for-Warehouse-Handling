@@ -12,6 +12,9 @@ import { SafetyScorecard } from './components/SafetyScorecard';
 import { RcaReportModal } from './components/RcaReportModal';
 import { VoiceAlertSystem } from './components/VoiceAlertSystem';
 import { PrivacyShieldToggle } from './components/PrivacyShieldToggle';
+import { HazardHeatmap } from './components/HazardHeatmap';
+import { OperatorCoachPanel } from './components/OperatorCoachPanel';
+import { BayReadinessPanel } from './components/BayReadinessPanel';
 
 import {
   Video,
@@ -25,10 +28,12 @@ import {
 } from 'lucide-react';
 
 type TabMode = 'video_hud' | 'digital_twin' | 'live_feed' | 'shift_analytics' | 'safety_scorecard';
+type FocusFilter = 'ALL' | 'CRITICAL' | 'HIGH' | 'FRAGILE';
 
 export default function App() {
   // Navigation & View Mode
   const [activeTab, setActiveTab] = useState<TabMode>('video_hud');
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>('ALL');
 
   // Active Scenario & Frame Scrubbing
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('SCN-01');
@@ -56,6 +61,56 @@ export default function App() {
   const activeScenario = BENCHMARK_SCENARIOS.find((s) => s.id === selectedScenarioId) || BENCHMARK_SCENARIOS[0];
   const currentFrame = activeScenario.frames[currentFrameIdx] || activeScenario.frames[0];
 
+  const filteredScenarios = BENCHMARK_SCENARIOS.filter((scenario) => {
+    if (focusFilter === 'ALL') return true;
+    if (focusFilter === 'CRITICAL') return scenario.severity === 'CRITICAL';
+    if (focusFilter === 'HIGH') return scenario.severity === 'HIGH';
+    return scenario.fragilityRating === 'FRAGILE';
+  });
+
+  const highestRiskScenario = [...BENCHMARK_SCENARIOS].sort((a, b) => b.financialRiskInr - a.financialRiskInr)[0];
+
+  const liveRiskKpis = [
+    {
+      label: 'Active alerts',
+      value: `${BENCHMARK_SCENARIOS.filter((s) => s.severity !== 'LOW').length}`,
+      detail: 'risk flags in this shift'
+    },
+    {
+      label: 'Prevented losses',
+      value: `₹${(shiftStats.estimatedCostSavedInr / 100000).toFixed(2)}L`,
+      detail: 'value protected today'
+    },
+    {
+      label: 'Safety score',
+      value: `${shiftStats.safetyScorePct.toFixed(1)}%`,
+      detail: 'overall compliance'
+    },
+    {
+      label: 'Focus bay',
+      value: highestRiskScenario.bayId,
+      detail: highestRiskScenario.title
+    }
+  ];
+
+  const recommendedActions = [
+    {
+      title: 'Stop unsafe pallet staging',
+      detail: 'Bay 3 is trending toward unstable stacking and abrupt drop events. Reposition load buffer away from forklift corridor.',
+      priority: 'CRITICAL'
+    },
+    {
+      title: 'Coach buddy-lift protocol',
+      detail: 'Solo heavy lifts remain above the safe threshold for fragile appliance cartons. Trigger a 2-person lift reminder.',
+      priority: 'HIGH'
+    },
+    {
+      title: 'Reinforce dock handling discipline',
+      detail: 'Next unloading cycle should verify dock bridge engagement before trolley transfer to avoid uneven gap impact.',
+      priority: 'MEDIUM'
+    }
+  ];
+
   const handleSelectScenario = (id: string) => {
     setSelectedScenarioId(id);
     setCurrentFrameIdx(0);
@@ -81,7 +136,7 @@ export default function App() {
                   FIELD INTELLIGENCE v1.0
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400">Autonomous Video Intelligence for Warehouse Damage Prevention</p>
+              <p className="text-[10px] text-slate-400">AI Field Intelligence Assistant for Safer Warehouse Handling</p>
             </div>
           </div>
 
@@ -177,6 +232,106 @@ export default function App() {
 
       {/* Main Body Viewport */}
       <main className="flex-1 max-w-[1700px] w-full mx-auto p-4 md:p-6 space-y-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.9fr] gap-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-blue-400">AI command center</p>
+                <h2 className="mt-1 text-xl font-bold text-white">Live warehouse risk overview</h2>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-[10px] font-semibold">
+                {(['ALL', 'CRITICAL', 'HIGH', 'FRAGILE'] as FocusFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setFocusFilter(filter)}
+                    className={`px-2.5 py-1.5 rounded-full border transition-all ${
+                      focusFilter === filter
+                        ? 'bg-blue-500/20 border-blue-500/50 text-blue-200'
+                        : 'border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+                    }`}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 xl:grid-cols-4 gap-3">
+              {liveRiskKpis.map((kpi) => (
+                <div key={kpi.label} className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                  <p className="text-[10px] font-mono uppercase text-slate-400">{kpi.label}</p>
+                  <p className="mt-2 text-xl font-bold text-white">{kpi.value}</p>
+                  <p className="mt-1 text-[10px] text-slate-400">{kpi.detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 shadow-xl">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-amber-300">Preventive actions</p>
+            <div className="mt-3 space-y-3">
+              {recommendedActions.map((action) => (
+                <div key={action.title} className="rounded-xl border border-amber-500/20 bg-slate-950/60 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-white">{action.title}</h3>
+                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${
+                      action.priority === 'CRITICAL'
+                        ? 'border-red-500/50 text-red-300 bg-red-500/10'
+                        : action.priority === 'HIGH'
+                        ? 'border-amber-500/50 text-amber-300 bg-amber-500/10'
+                        : 'border-blue-500/50 text-blue-300 bg-blue-500/10'
+                    }`}>{action.priority}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-300">{action.detail}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <HazardHeatmap />
+          <OperatorCoachPanel />
+          <BayReadinessPanel />
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">Scenario focus</p>
+              <h3 className="text-sm font-semibold text-white">Filtered warehouse behaviors</h3>
+            </div>
+            <span className="text-[11px] text-slate-400">{filteredScenarios.length} scenarios shown</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+            {filteredScenarios.slice(0, 6).map((scenario) => (
+              <button
+                key={scenario.id}
+                onClick={() => handleSelectScenario(scenario.id)}
+                className={`rounded-xl border p-2.5 text-left transition-all ${
+                  selectedScenarioId === scenario.id
+                    ? 'bg-blue-500/10 border-blue-500/40 text-white'
+                    : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-mono text-slate-400">{scenario.id}</span>
+                  <span className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full border ${
+                    scenario.severity === 'CRITICAL'
+                      ? 'border-red-500/30 text-red-300 bg-red-500/10'
+                      : scenario.severity === 'HIGH'
+                      ? 'border-amber-500/30 text-amber-300 bg-amber-500/10'
+                      : 'border-blue-500/30 text-blue-300 bg-blue-500/10'
+                  }`}>{scenario.severity}</span>
+                </div>
+                <p className="mt-2 text-[11px] font-semibold leading-snug">{scenario.title}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Mode 1: Video Intelligence HUD & Kinematics */}
         {activeTab === 'video_hud' && (
           <div className="space-y-6">

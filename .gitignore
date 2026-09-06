@@ -1,6 +1,11 @@
 # macOS
 .DS_Store
 
+# Local challenge brief / document artifacts
+*.docx
+*.doc
+*.pdf
+
 # Python
 __pycache__/
 *.py[cod]

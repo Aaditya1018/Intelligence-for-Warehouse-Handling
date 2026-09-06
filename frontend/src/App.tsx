@@ -81,7 +81,7 @@ export default function App() {
                   FIELD INTELLIGENCE v1.0
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400">Autonomous Video Intelligence for Warehouse Damage Prevention</p>
+              <p className="text-[10px] text-slate-400">AI Field Intelligence Assistant for Safer Warehouse Handling</p>
             </div>
           </div>
 

@@ -13,6 +13,15 @@ $$\text{Observed Behaviour} \longrightarrow \text{Kinematic Telemetry} \longrigh
 
 By pairing **sub-50ms Physics-Informed Temporal Kinematics (PI-TK)** with a **Multi-Modal Supervisor Copilot** and an edge **Responsible AI Privacy Shield**, LoadGuard AI transforms warehouse cameras and mobile phones into an intelligent operational assistant.
 
+### Challenge Brief Alignment
+
+This project is designed around the exact challenge statement: building an AI-powered video intelligence system for warehouse operations that reduces product damage, improves material-handling discipline, and creates safer loading and unloading practices.
+
+- **Problem statement:** Warehouses process thousands of products daily through vehicle loading, unloading, movement, stacking, pallet handling, and transfers. Many losses are caused by inappropriate handling behavior rather than equipment failure.
+- **Target mission:** Detect damage-causing or unsafe actions such as dropping, dragging, throwing, unstable stacking, incorrect pallet placement, unsafe movement, or handling outside standard operating procedures.
+- **Hackathon requirement:** Convert conventional surveillance into a proactive AI field intelligence layer that detects risk early, triggers timely coaching or alerts, and generates actionable operational insights.
+- **Pilot scope:** One loading bay, one vehicle type, one product category, 5–6 predefined behaviours, and limited camera angles to keep the demo realistic and production-feasible.
+
 ---
 
 ## 🏆 Key Novel Innovations (Why LoadGuard AI Wins)
@@ -35,6 +44,34 @@ By pairing **sub-50ms Physics-Informed Temporal Kinematics (PI-TK)** with a **Mu
 ---
 
 ## 📦 Curated 12 Predefined Behavior Taxonomy
+
+This taxonomy is deliberately aligned with the challenge’s “minimum 4/5 behaviours or scenarios” expectation and extends into a realistic 12-event warehouse risk catalogue for a stronger demo story.
+
+### Expected Solution Coverage
+
+| Challenge Capability | LoadGuard AI Implementation |
+| :--- | :--- |
+| AI video understanding | Multi-object tracking, pose estimation, scene context, event sequencing, and bay-aware risk classification |
+| Behaviour detection | 12 curated warehouse handling behaviors, from drops and dragging to stacking and forklift pinch risks |
+| Real-time intervention | Environmental nudges, bilingual voice alerts, safety reminders, and escalated supervisor guidance |
+| Actionable intelligence | Human-readable RCA, corrective actions, shift summaries, and risk tagging at event level |
+| Privacy-preserving workflow | Edge-based worker silhouette masking and non-punitive coaching instead of surveillance-heavy monitoring |
+
+---
+
+### 5–6 Behaviour Pilot Recommendation
+
+For a focused hackathon demo, the recommended pilot flow is:
+
+1. One loading bay with one vehicle and one product category.
+2. 5–6 recurring risk patterns such as drop impact, dragging, unstable stacking, unsafe pallet placement, dock gap, and forklift proximity.
+3. Live or recorded warehouse footage processed in near real time.
+4. Event classification with risk score and intervention trigger.
+5. RCA and coaching summary generated for the supervisor.
+
+This keeps the system grounded in the challenge while still showing the full end-to-end AI intelligence stack.
+
+---
 
 | # | Behavior Scenario | Risk Category | Observed Telemetry | Good / Expected Practice |
 | :-: | :--- | :---: | :--- | :--- |

@@ -16,6 +16,11 @@ echo "============================================================"
 if [ ! -d "$BACKEND_DIR/.venv" ]; then
     echo "Creating Python virtualenv in $BACKEND_DIR/.venv..."
     python3 -m venv "$BACKEND_DIR/.venv"
+fi
+
+if [ ! -f "$BACKEND_DIR/.venv/bin/pytest" ] || [ ! -f "$BACKEND_DIR/.venv/bin/uvicorn" ]; then
+    echo "Installing backend dependencies..."
+    "$BACKEND_DIR/.venv/bin/python" -m pip install --upgrade pip
     "$BACKEND_DIR/.venv/bin/pip" install -r "$BACKEND_DIR/requirements.txt"
 fi
 

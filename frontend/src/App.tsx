@@ -12,6 +12,9 @@ import { SafetyScorecard } from './components/SafetyScorecard';
 import { RcaReportModal } from './components/RcaReportModal';
 import { VoiceAlertSystem } from './components/VoiceAlertSystem';
 import { PrivacyShieldToggle } from './components/PrivacyShieldToggle';
+import { HazardHeatmap } from './components/HazardHeatmap';
+import { OperatorCoachPanel } from './components/OperatorCoachPanel';
+import { BayReadinessPanel } from './components/BayReadinessPanel';
 
 import {
   Video,
@@ -285,6 +288,12 @@ export default function App() {
               ))}
             </div>
           </div>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <HazardHeatmap />
+          <OperatorCoachPanel />
+          <BayReadinessPanel />
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">

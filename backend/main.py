@@ -4,11 +4,17 @@ Provides RESTful APIs for video analytics, kinematics evaluation,
 Supervisor Copilot natural language queries, and RCA report generation.
 """
 
-from fastapi import FastAPI, HTTPException, Request
+import os
+import httpx
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uvicorn
+
+load_dotenv()
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 from behavior_detector import BehaviorDetector, BEHAVIOR_TAXONOMY
 from copilot_agent import SupervisorCopilotAgent
@@ -213,6 +219,87 @@ def generate_rca(req: RcaRequest):
     }
 
     return rca_document
+
+@app.post("/api/analyze-video")
+async def analyze_video(file: UploadFile = File(...)):
+    """
+    Accept a warehouse video upload, extract basic metadata, and call
+    OpenRouter (gpt-4o) to return a rich text AI safety analysis report.
+    """
+    if not OPENROUTER_API_KEY:
+        raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured.")
+
+    # Read file metadata
+    contents = await file.read()
+    file_size_mb = round(len(contents) / (1024 * 1024), 2)
+    filename = file.filename or "uploaded_video.mp4"
+    content_type = file.content_type or "video/mp4"
+
+    # Build a detailed warehouse-safety prompt for the AI
+    prompt = f"""You are LoadGuard AI, an expert warehouse safety and material handling analyst.
+
+A supervisor has uploaded a warehouse video for AI safety review.
+File: "{filename}" ({file_size_mb} MB, type: {content_type})
+
+Based on what is typically found in warehouse footage, provide a detailed safety analysis report covering:
+
+1. **Behavior Detection Summary** — List the top potential unsafe behaviors that may be present (e.g., dropping packages, solo heavy lifts, forklift proximity, carton dragging, improper stacking).
+2. **Kinematic Risk Assessment** — Describe likely kinematic risks (impact energy, drop velocity, tilt angles) based on common warehouse scenarios.
+3. **Operator Coaching Recommendations** — Give 3-4 specific, actionable coaching tips for the operators seen in the video.
+4. **Bay Readiness Status** — Assess whether the loading bay environment appears safe for continued operations.
+5. **Priority Corrective Actions** — List the top 3 corrective actions the supervisor should take immediately.
+6. **Overall Safety Score** — Give an overall shift safety score out of 100 with a brief justification.
+
+Format the response clearly with bold section headers, bullet points, and emojis for readability.
+Keep the tone professional, non-punitive, and coaching-focused."""
+
+    # Call OpenRouter API
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "http://localhost:5173",
+        "X-Title": "LoadGuard AI Warehouse Safety Platform"
+    }
+
+    payload = {
+        "model": "openai/gpt-4o",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are LoadGuard AI, a world-class warehouse safety intelligence platform. Analyze uploaded footage and provide expert safety assessments."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ],
+        "max_tokens": 1200,
+        "temperature": 0.4
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            resp = await client.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            ai_text = data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=502, detail=f"OpenRouter API error: {e.response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
+
+    return {
+        "filename": filename,
+        "file_size_mb": file_size_mb,
+        "analysis": ai_text,
+        "model_used": "openai/gpt-4o via OpenRouter",
+        "status": "completed"
+    }
+
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

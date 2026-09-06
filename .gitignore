@@ -21,3 +21,7 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Portable Node.js (downloaded locally, not needed in repo)
+node-v20.11.1-win-x64/
+node.zip
